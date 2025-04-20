@@ -1,0 +1,15 @@
+[package]
+name = "loco-pilot"
+version = "0.1.0"
+edition = "2024"
+description = "A customizable bash prompt"
+authors = ["Aasish Sudarsanan"]
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }  # For command line argument parsing
+colored = "2.0"                                   # For colored terminal output
+dirs = "5.0"                                      # For getting home directory
+gix = { version = "0.55", default-features = false, features = ["status"] } # For git status
+chrono = "0.4"                                    # For working with date and time
+serde = { version = "1.0", features = ["derive"] } # For serializing/deserializing config
+toml = "0.8"                                      # For config file format
