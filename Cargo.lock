@@ -1274,6 +1274,7 @@ dependencies = [
  "colored",
  "dirs",
  "gix",
+ "once_cell",
  "serde",
  "toml",
 ]
