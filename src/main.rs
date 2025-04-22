@@ -95,6 +95,12 @@ fn save_config(config: &Config) -> io::Result<()> {
     Ok(())
 }
 
+/// Enable colors even when not in a terminal
+fn enable_colors_for_bash() {
+    // Force colored to always output colors, even in non-tty environments
+    colored::control::set_override(true);
+}
+
 /// A customizable bash prompt application
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -116,6 +122,9 @@ enum Commands {
         /// The value to set
         value: Option<String>,
     },
+    
+    /// Display detailed version information
+    Version,
 }
 
 /// Returns the current working directory, with home directory replaced by ~
@@ -317,18 +326,76 @@ fn get_git_info() -> Option<GitStatus> {
     }
 }
 
+/// Get the current git commit SHA
+fn get_git_commit_sha() -> Option<String> {
+    let current_dir = env::current_dir().ok()?;
+    
+    // Try to get short commit hash using git command
+    if let Ok(output) = Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(&current_dir)
+        .output() 
+    {
+        if output.status.success() {
+            if let Ok(sha) = String::from_utf8(output.stdout) {
+                return Some(sha.trim().to_string());
+            }
+        }
+    }
+    
+    // Fallback to gix if git command fails
+    match gix::open(&current_dir) {
+        Ok(repo) => {
+            if let Ok(head) = repo.head() {
+                // Different approach to get the commit id from gix
+                if let Some(id) = head.id() {
+                    // Get short SHA (7 characters)
+                    let short_id = id.to_string()[..7].to_string();
+                    return Some(short_id);
+                }
+            }
+            None
+        },
+        Err(_) => None,
+    }
+}
+
+/// Get the full version string including git commit SHA
+fn get_full_version() -> String {
+    // Get the crate version from Cargo.toml via env
+    let version = env!("CARGO_PKG_VERSION");
+    
+    // Append the git SHA if available
+    if let Some(sha) = get_git_commit_sha() {
+        format!("{} ({})", version, sha)
+    } else {
+        version.to_string()
+    }
+}
+
 /// Generate the prompt string
 fn generate_prompt(style: &str) -> String {
+    enable_colors_for_bash();
+    
     let current_time = Local::now().format("%H:%M:%S").to_string();
     let username = env::var("USER").unwrap_or_else(|_| "user".to_string());
     let hostname = get_hostname();
     let current_dir = get_current_dir();  // Using the full path with ~ instead of shortened path
     
+    // Add bash-specific escape sequence markers to prevent prompt length miscalculation
+    // \001 and \002 are the actual control characters that Bash uses (octal 001 and 002)
+    let wrap_color = |s: String| -> String {
+        format!("\x01{}\x02", s)
+    };
+    
     let git_info = get_git_info()
         .map(|status| {
             let branch_info = match style {
                 "emoji" => format!(" 🔖 {}", status.branch),
-                _ => format!(" ({})", status.branch.green())
+                _ => {
+                    let colored_branch = status.branch.green().to_string();
+                    format!(" ({})", wrap_color(colored_branch))
+                }
             };
             
             // Add ahead/behind indicators
@@ -349,7 +416,10 @@ fn generate_prompt(style: &str) -> String {
             let dirty_info = if status.dirty { 
                 match style {
                     "emoji" => " 🔴".to_string(),
-                    _ => " *".red().to_string()
+                    _ => {
+                        let colored_star = " *".red().to_string();
+                        wrap_color(colored_star)
+                    }
                 }
             } else { 
                 "".to_string() 
@@ -363,10 +433,10 @@ fn generate_prompt(style: &str) -> String {
         "minimal" => format!("$ "),
         "info" => format!(
             "[{}] {}@{}: {}{} $ ",
-            current_time.blue(),
-            username.green(),
-            hostname.yellow(),
-            current_dir.cyan(),
+            wrap_color(current_time.blue().to_string()),
+            wrap_color(username.green().to_string()),
+            wrap_color(hostname.yellow().to_string()),
+            wrap_color(current_dir.cyan().to_string()),
             git_info
         ),
         "emoji" => format!(
@@ -379,9 +449,9 @@ fn generate_prompt(style: &str) -> String {
         ),
         _ => format!(
             "{}@{}:{}{} $ ",
-            username.green(),
-            hostname.yellow(),
-            current_dir.cyan(),
+            wrap_color(username.green().to_string()),
+            wrap_color(hostname.yellow().to_string()),
+            wrap_color(current_dir.cyan().to_string()),
             git_info
         ),
     }
@@ -453,6 +523,9 @@ fn main() {
                 println!("  color.git_dirty = {}", config.colors.git_dirty);
                 println!("  color.time = {}", config.colors.time);
             }
+        }
+        Some(Commands::Version) => {
+            println!("Version: {}", get_full_version());
         }
         None => {
             // Use style from command line args if provided, otherwise use from config
