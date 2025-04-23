@@ -1,7 +1,6 @@
 use chrono::Local;
 use clap::{Parser, Subcommand};
 use colored::*;
-use gix::bstr::ByteSlice;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -12,17 +11,17 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// Type alias for a cached item with timestamp
+type CachedItem<T> = Option<(T, Instant)>;
+
+/// Type alias for the path cache tuple - contains current directory, home directory, and hostname
+type PathCacheTuple = (CachedItem<String>, CachedItem<String>, CachedItem<String>);
+
 /// Cache for git information to avoid repeated expensive git operations
 static GIT_INFO_CACHE: Lazy<Mutex<Option<(GitStatus, Instant)>>> = Lazy::new(|| Mutex::new(None));
 
 /// Cache for filesystem paths and environment variables
-static PATH_CACHE: Lazy<
-    Mutex<(
-        Option<(String, Instant)>,
-        Option<(String, Instant)>,
-        Option<(String, Instant)>,
-    )>,
-> = Lazy::new(|| Mutex::new((None, None, None)));
+static PATH_CACHE: Lazy<Mutex<PathCacheTuple>> = Lazy::new(|| Mutex::new((None, None, None)));
 
 /// Maximum age of cached git info in seconds
 const GIT_CACHE_TTL_SECS: u64 = 2;
@@ -338,10 +337,10 @@ fn get_git_info() -> Option<GitStatus> {
     let mut behind = 0;
 
     for line in &lines {
-        if line.starts_with("# branch.head ") {
-            branch = line["# branch.head ".len()..].to_string();
-        } else if line.starts_with("# branch.ab ") {
-            let parts: Vec<&str> = line["# branch.ab ".len()..].split_whitespace().collect();
+        if let Some(branch_name) = line.strip_prefix("# branch.head ") {
+            branch = branch_name.to_string();
+        } else if let Some(branch_ab_info) = line.strip_prefix("# branch.ab ") {
+            let parts: Vec<&str> = branch_ab_info.split_whitespace().collect();
             if parts.len() == 2 {
                 ahead = parts[1].parse::<i32>().unwrap_or(0) as usize;
                 behind = parts[0].parse::<i32>().unwrap_or(0).unsigned_abs() as usize;
