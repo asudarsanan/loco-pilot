@@ -365,9 +365,9 @@ fn get_git_info() -> Option<GitStatus> {
 
     // Check for dirty status - anything that starts with a space and a single letter
     // indicates a change in git status
-    let dirty = lines.iter().any(|line| {
-        !line.starts_with('#') && line.len() > 1 && !line.starts_with(' ')
-    });
+    let dirty = lines
+        .iter()
+        .any(|line| !line.starts_with('#') && line.len() > 1 && !line.starts_with(' '));
 
     let git_status = GitStatus {
         branch,
