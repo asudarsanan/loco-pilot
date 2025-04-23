@@ -1,27 +1,29 @@
+use chrono::Local;
 use clap::{Parser, Subcommand};
 use colored::*;
-use chrono::Local;
+use gix;
+use gix::bstr::ByteSlice;
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
-use gix;
-use gix::bstr::ByteSlice;
-use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use once_cell::sync::Lazy;
 
 /// Cache for git information to avoid repeated expensive git operations
-static GIT_INFO_CACHE: Lazy<Mutex<Option<(GitStatus, Instant)>>> = Lazy::new(|| {
-    Mutex::new(None)
-});
+static GIT_INFO_CACHE: Lazy<Mutex<Option<(GitStatus, Instant)>>> = Lazy::new(|| Mutex::new(None));
 
 /// Cache for filesystem paths and environment variables
-static PATH_CACHE: Lazy<Mutex<(Option<(String, Instant)>, Option<(String, Instant)>, Option<(String, Instant)>)>> = Lazy::new(|| {
-    Mutex::new((None, None, None))
-});
+static PATH_CACHE: Lazy<
+    Mutex<(
+        Option<(String, Instant)>,
+        Option<(String, Instant)>,
+        Option<(String, Instant)>,
+    )>,
+> = Lazy::new(|| Mutex::new((None, None, None)));
 
 /// Maximum age of cached git info in seconds
 const GIT_CACHE_TTL_SECS: u64 = 2;
@@ -75,9 +77,7 @@ impl Default for ColorConfig {
 }
 
 // Cache for configuration
-static CONFIG_CACHE: Lazy<Mutex<Option<(Config, Instant)>>> = Lazy::new(|| {
-    Mutex::new(None)
-});
+static CONFIG_CACHE: Lazy<Mutex<Option<(Config, Instant)>>> = Lazy::new(|| Mutex::new(None));
 
 /// Maximum age of cached config in seconds
 const CONFIG_CACHE_TTL_SECS: u64 = 60;
@@ -128,17 +128,17 @@ fn save_config(config: &Config) -> io::Result<()> {
             "Could not determine config directory",
         )
     })?;
-    
-    let content = toml::to_string_pretty(&config)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    
+
+    let content =
+        toml::to_string_pretty(&config).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
     let mut file = fs::File::create(config_path)?;
     file.write_all(content.as_bytes())?;
-    
+
     // Update the cache with the new config
     let mut cache = CONFIG_CACHE.lock().unwrap();
     *cache = Some((config.clone(), Instant::now()));
-    
+
     Ok(())
 }
 
@@ -170,7 +170,7 @@ enum Commands {
         /// The value to set
         value: Option<String>,
     },
-    
+
     /// Display detailed version information
     Version,
 }
@@ -179,17 +179,17 @@ enum Commands {
 fn get_current_dir() -> String {
     let mut path_cache = PATH_CACHE.lock().unwrap();
     let (current_dir_cache, home_dir_cache, _) = &*path_cache;
-    
+
     // Check if we have a cached current directory that's still fresh
     if let Some((cached_dir, timestamp)) = current_dir_cache {
         if timestamp.elapsed() < Duration::from_secs(PATH_CACHE_TTL_SECS) {
             return cached_dir.clone();
         }
     }
-    
+
     let current_dir = env::current_dir().unwrap_or_default();
     let current_path = current_dir.display().to_string();
-    
+
     // Check if we have a cached home directory
     let home_path = if let Some((cached_home, timestamp)) = home_dir_cache {
         if timestamp.elapsed() < Duration::from_secs(PATH_CACHE_TTL_SECS) {
@@ -208,16 +208,16 @@ fn get_current_dir() -> String {
     } else {
         String::new()
     };
-    
+
     let result = if !home_path.is_empty() && current_path.starts_with(&home_path) {
         current_path.replacen(&home_path, "~", 1)
     } else {
         current_path
     };
-    
+
     // Update the cache
     path_cache.0 = Some((result.clone(), Instant::now()));
-    
+
     result
 }
 
@@ -225,23 +225,23 @@ fn get_current_dir() -> String {
 #[inline]
 fn get_shortened_dir() -> String {
     let full_path = get_current_dir();
-    
+
     // If the path is short enough, return it as is
     if full_path.len() <= 15 {
         return full_path;
     }
-    
+
     // Split the path by separator
     let components: Vec<&str> = full_path.split('/').collect();
-    
+
     // If we have 3 or fewer components, just return the full path
     if components.len() <= 3 {
         return full_path;
     }
-    
+
     // Get the first component (usually ~ or root)
     let first = components.first().unwrap_or(&"");
-    
+
     // Get the last two components
     let last_two = if components.len() >= 2 {
         let len = components.len();
@@ -249,7 +249,7 @@ fn get_shortened_dir() -> String {
     } else {
         components.last().unwrap_or(&"").to_string()
     };
-    
+
     // Format with ellipsis
     format!("{}/.../{}", first, last_two)
 }
@@ -258,14 +258,14 @@ fn get_shortened_dir() -> String {
 fn get_hostname() -> String {
     let mut path_cache = PATH_CACHE.lock().unwrap();
     let (_, _, hostname_cache) = &*path_cache;
-    
+
     // Check if we have a cached hostname that's still fresh
     if let Some((cached_hostname, timestamp)) = hostname_cache {
         if timestamp.elapsed() < Duration::from_secs(PATH_CACHE_TTL_SECS) {
             return cached_hostname.clone();
         }
     }
-    
+
     // Try multiple ways to get the hostname
     let hostname = if let Ok(hostname) = env::var("HOSTNAME") {
         hostname
@@ -280,10 +280,10 @@ fn get_hostname() -> String {
     } else {
         "localhost".to_string()
     };
-    
+
     // Update the cache
     path_cache.2 = Some((hostname.clone(), Instant::now()));
-    
+
     hostname
 }
 
@@ -309,38 +309,39 @@ fn get_git_info() -> Option<GitStatus> {
 
     let current_dir = match env::current_dir() {
         Ok(dir) => dir,
-        Err(_) => return None
+        Err(_) => return None,
     };
-    
+
     // Quick check if this is a git repository
     // This avoids expensive operations if we're not in a git repo
     let git_dir = current_dir.join(".git");
     if !git_dir.exists() {
         return None;
     }
-    
+
     // Use a single git command to get branch and status information
     // This is much faster than multiple separate calls
     let output = match Command::new("git")
         .args(["status", "--branch", "--porcelain=v2"])
         .current_dir(&current_dir)
-        .output() {
-            Ok(output) => output,
-            Err(_) => return None
-        };
-    
+        .output()
+    {
+        Ok(output) => output,
+        Err(_) => return None,
+    };
+
     if !output.status.success() {
         return None;
     }
-    
+
     let status_output = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = status_output.lines().collect();
-    
+
     // Parse branch information from the output
     let mut branch = String::from("unknown");
     let mut ahead = 0;
     let mut behind = 0;
-    
+
     for line in &lines {
         if line.starts_with("# branch.head ") {
             branch = line["# branch.head ".len()..].to_string();
@@ -352,13 +353,13 @@ fn get_git_info() -> Option<GitStatus> {
             }
         }
     }
-    
+
     // If branch is HEAD, we're in detached HEAD state - get commit hash
     if branch == "HEAD" {
         if let Ok(commit_output) = Command::new("git")
             .args(["rev-parse", "--short", "HEAD"])
             .current_dir(&current_dir)
-            .output() 
+            .output()
         {
             if commit_output.status.success() {
                 if let Ok(commit_hash) = String::from_utf8(commit_output.stdout) {
@@ -367,13 +368,13 @@ fn get_git_info() -> Option<GitStatus> {
             }
         }
     }
-    
+
     // Check for dirty status - anything that starts with a space and a single letter
     // indicates a change in git status
     let dirty = lines.iter().any(|line| {
-        !line.starts_with('#') && line.len() > 1 && line.chars().nth(0).unwrap() != ' ' 
+        !line.starts_with('#') && line.len() > 1 && line.chars().nth(0).unwrap() != ' '
     });
-    
+
     let git_status = GitStatus {
         branch,
         dirty,
@@ -389,12 +390,12 @@ fn get_git_info() -> Option<GitStatus> {
 /// Get the current git commit SHA
 fn get_git_commit_sha() -> Option<String> {
     let current_dir = env::current_dir().ok()?;
-    
+
     // Try to get short commit hash using git command
     if let Ok(output) = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .current_dir(&current_dir)
-        .output() 
+        .output()
     {
         if output.status.success() {
             if let Ok(sha) = String::from_utf8(output.stdout) {
@@ -402,7 +403,7 @@ fn get_git_commit_sha() -> Option<String> {
             }
         }
     }
-    
+
     // Fallback to gix if git command fails
     match gix::open(&current_dir) {
         Ok(repo) => {
@@ -415,7 +416,7 @@ fn get_git_commit_sha() -> Option<String> {
                 }
             }
             None
-        },
+        }
         Err(_) => None,
     }
 }
@@ -424,7 +425,7 @@ fn get_git_commit_sha() -> Option<String> {
 fn get_full_version() -> String {
     // Get the crate version from Cargo.toml via env
     let version = env!("CARGO_PKG_VERSION");
-    
+
     // Append the git SHA if available
     if let Some(sha) = get_git_commit_sha() {
         format!("{} ({})", version, sha)
@@ -434,9 +435,7 @@ fn get_full_version() -> String {
 }
 
 // Cache for username
-static USERNAME_CACHE: Lazy<Mutex<Option<String>>> = Lazy::new(|| {
-    Mutex::new(None)
-});
+static USERNAME_CACHE: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
 
 /// Get username with caching
 #[inline]
@@ -445,7 +444,7 @@ fn get_username() -> String {
     if let Some(username) = &*cache {
         return username.clone();
     }
-    
+
     let username = env::var("USER").unwrap_or_else(|_| "user".to_string());
     *cache = Some(username.clone());
     username
@@ -454,17 +453,15 @@ fn get_username() -> String {
 /// Generate the prompt string
 fn generate_prompt(style: &str) -> String {
     enable_colors_for_bash();
-    
+
     let current_time = Local::now().format("%H:%M:%S").to_string();
     let username = get_username();
     let hostname = get_hostname();
     let current_dir = get_shortened_dir();
-    
+
     // Add bash-specific escape sequence markers to prevent prompt length miscalculation
-    let wrap_color = |s: String| -> String {
-        format!("\x01{}\x02", s)
-    };
-    
+    let wrap_color = |s: String| -> String { format!("\x01{}\x02", s) };
+
     // Only get git info if it's needed for the selected style
     let git_info = if style != "minimal" {
         get_git_info()
@@ -476,23 +473,23 @@ fn generate_prompt(style: &str) -> String {
                         format!(" ({})", wrap_color(colored_branch))
                     }
                 };
-                
+
                 // Add ahead/behind indicators
                 let mut ahead_behind = String::new();
                 if status.ahead > 0 {
                     ahead_behind.push_str(&match style {
                         "emoji" => format!(" ↑{}", status.ahead),
-                        _ => format!(" ↑{}", status.ahead)
+                        _ => format!(" ↑{}", status.ahead),
                     });
                 }
                 if status.behind > 0 {
                     ahead_behind.push_str(&match style {
                         "emoji" => format!(" ↓{}", status.behind),
-                        _ => format!(" ↓{}", status.behind)
+                        _ => format!(" ↓{}", status.behind),
                     });
                 }
-                
-                let dirty_info = if status.dirty { 
+
+                let dirty_info = if status.dirty {
                     match style {
                         "emoji" => " 🔴".to_string(),
                         _ => {
@@ -500,17 +497,17 @@ fn generate_prompt(style: &str) -> String {
                             wrap_color(colored_star)
                         }
                     }
-                } else { 
+                } else {
                     String::new()
                 };
-                
+
                 format!("{}{}{}", branch_info, ahead_behind, dirty_info)
             })
             .unwrap_or_default()
     } else {
         String::new()
     };
-    
+
     // Avoid string allocations where possible by using match with direct format calls
     match style {
         "minimal" => String::from("$ "),
@@ -524,11 +521,7 @@ fn generate_prompt(style: &str) -> String {
         ),
         "emoji" => format!(
             "🕒 {} 👤 {} 🖥️  {} 📁 {}{} ➡️  ",
-            current_time,
-            username,
-            hostname,
-            current_dir,
-            git_info
+            current_time, username, hostname, current_dir, git_info
         ),
         _ => format!(
             "{}@{}:{}{} $ ",
@@ -542,13 +535,13 @@ fn generate_prompt(style: &str) -> String {
 
 fn main() {
     let args = Args::parse();
-    
+
     match &args.command {
         Some(Commands::Config { key, value }) => {
             // Handle configuration changes
             // Load configuration
             let mut config = load_config();
-            
+
             if let (Some(key), Some(value)) = (key, value) {
                 match key.as_str() {
                     "style" => {
@@ -588,7 +581,7 @@ fn main() {
                         return;
                     }
                 }
-                
+
                 // Save updated configuration
                 if let Err(e) = save_config(&config) {
                     eprintln!("Failed to save configuration: {}", e);
@@ -618,7 +611,7 @@ fn main() {
             } else {
                 load_config().style
             };
-            
+
             // Generate and print the prompt
             print!("{}", generate_prompt(&style));
         }
