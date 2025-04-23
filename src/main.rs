@@ -1,7 +1,6 @@
 use chrono::Local;
 use clap::{Parser, Subcommand};
 use colored::*;
-use gix;
 use gix::bstr::ByteSlice;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -104,11 +103,7 @@ fn load_config() -> Config {
 
     let config = if let Some(path) = get_config_path() {
         if let Ok(content) = fs::read_to_string(path) {
-            if let Ok(config) = toml::from_str::<Config>(&content) {
-                config
-            } else {
-                Config::default()
-            }
+            toml::from_str::<Config>(&content).unwrap_or_default()
         } else {
             Config::default()
         }
@@ -349,7 +344,7 @@ fn get_git_info() -> Option<GitStatus> {
             let parts: Vec<&str> = line["# branch.ab ".len()..].split_whitespace().collect();
             if parts.len() == 2 {
                 ahead = parts[1].parse::<i32>().unwrap_or(0) as usize;
-                behind = parts[0].parse::<i32>().unwrap_or(0).abs() as usize;
+                behind = parts[0].parse::<i32>().unwrap_or(0).unsigned_abs() as usize;
             }
         }
     }
@@ -372,7 +367,7 @@ fn get_git_info() -> Option<GitStatus> {
     // Check for dirty status - anything that starts with a space and a single letter
     // indicates a change in git status
     let dirty = lines.iter().any(|line| {
-        !line.starts_with('#') && line.len() > 1 && line.chars().nth(0).unwrap() != ' '
+        !line.starts_with('#') && line.len() > 1 && !line.starts_with(' ')
     });
 
     let git_status = GitStatus {
