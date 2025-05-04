@@ -1,6 +1,5 @@
 use chrono::Local;
 use clap::{Parser, Subcommand};
-use colored::*;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -444,6 +443,14 @@ fn get_username() -> String {
     username
 }
 
+/// Generate properly escaped bash prompt color codes
+/// This is the key function for fixing the prompt issues
+fn bash_color(ansi_code: &str) -> String {
+    // Properly wrap ANSI escape codes with bash's prompt escaping sequences
+    // This ensures bash correctly calculates prompt width by ignoring non-printing characters
+    format!("\\[{}\\]", ansi_code)
+}
+
 /// Generate the prompt string
 fn generate_prompt(style: &str) -> String {
     enable_colors_for_bash();
@@ -453,18 +460,34 @@ fn generate_prompt(style: &str) -> String {
     let hostname = get_hostname();
     let current_dir = get_shortened_dir();
 
-    // Add bash-specific escape sequence markers to prevent prompt length miscalculation
-    let wrap_color = |s: String| -> String { format!("\x01{}\x02", s) };
+    // Create direct ANSI color sequences with bash prompt escaping
+    // This is more reliable than using the colored crate
+    let username_color = bash_color("\x1b[01;32m");  // Bold Green
+    let hostname_color = bash_color("\x1b[01;33m");  // Bold Yellow
+    let dir_color = bash_color("\x1b[01;34m");       // Bold Blue
+    let time_color = bash_color("\x1b[01;36m");      // Bold Cyan
+    let reset = bash_color("\x1b[0m");               // Reset
+
+    // Format colored text segments
+    let username_fmt = format!("{}{}{}", username_color, username, reset);
+    let hostname_fmt = format!("{}{}{}", hostname_color, hostname, reset);
+    let dir_fmt = format!("{}{}{}", dir_color, current_dir, reset);
+    let time_fmt = format!("{}{}{}", time_color, current_time, reset);
 
     // Only get git info if it's needed for the selected style
     let git_info = if style != "minimal" {
         get_git_info()
             .map(|status| {
+                let branch_color = bash_color("\x1b[01;32m");  // Bold Green
+                let dirty_color = bash_color("\x1b[01;31m");   // Bold Red
+                let ahead_color = bash_color("\x1b[01;33m");   // Bold Yellow
+                let behind_color = bash_color("\x1b[01;35m");  // Bold Purple
+
                 let branch_info = match style {
                     "emoji" => format!(" 🔖 {}", status.branch),
                     _ => {
-                        let colored_branch = status.branch.green().to_string();
-                        format!(" ({})", wrap_color(colored_branch))
+                        let colored_branch = format!("{}{}{}", branch_color, status.branch, reset);
+                        format!(" ({})", colored_branch)
                     }
                 };
 
@@ -473,23 +496,20 @@ fn generate_prompt(style: &str) -> String {
                 if status.ahead > 0 {
                     ahead_behind.push_str(&match style {
                         "emoji" => format!(" ↑{}", status.ahead),
-                        _ => format!(" ↑{}", status.ahead),
+                        _ => format!(" {}↑{}{}", ahead_color, status.ahead, reset),
                     });
                 }
                 if status.behind > 0 {
                     ahead_behind.push_str(&match style {
                         "emoji" => format!(" ↓{}", status.behind),
-                        _ => format!(" ↓{}", status.behind),
+                        _ => format!(" {}↓{}{}", behind_color, status.behind, reset),
                     });
                 }
 
                 let dirty_info = if status.dirty {
                     match style {
                         "emoji" => " 🔴".to_string(),
-                        _ => {
-                            let colored_star = " *".red().to_string();
-                            wrap_color(colored_star)
-                        }
+                        _ => format!("{}*{}", dirty_color, reset)
                     }
                 } else {
                     String::new()
@@ -507,10 +527,10 @@ fn generate_prompt(style: &str) -> String {
         "minimal" => String::from("$ "),
         "info" => format!(
             "[{}] {}@{}: {}{} $ ",
-            wrap_color(current_time.blue().to_string()),
-            wrap_color(username.green().to_string()),
-            wrap_color(hostname.yellow().to_string()),
-            wrap_color(current_dir.cyan().to_string()),
+            time_fmt,
+            username_fmt,
+            hostname_fmt,
+            dir_fmt,
             git_info
         ),
         "emoji" => format!(
@@ -519,9 +539,9 @@ fn generate_prompt(style: &str) -> String {
         ),
         _ => format!(
             "{}@{}:{}{} $ ",
-            wrap_color(username.green().to_string()),
-            wrap_color(hostname.yellow().to_string()),
-            wrap_color(current_dir.cyan().to_string()),
+            username_fmt,
+            hostname_fmt,
+            dir_fmt,
             git_info
         ),
     }
