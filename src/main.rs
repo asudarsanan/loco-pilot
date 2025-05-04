@@ -448,6 +448,7 @@ fn get_username() -> String {
 fn bash_color(ansi_code: &str) -> String {
     // Properly wrap ANSI escape codes with bash's prompt escaping sequences
     // This ensures bash correctly calculates prompt width by ignoring non-printing characters
+    // Use literal escape sequences without backslash escaping
     format!("\\[{}\\]", ansi_code)
 }
 
@@ -455,18 +456,53 @@ fn bash_color(ansi_code: &str) -> String {
 fn generate_prompt(style: &str) -> String {
     enable_colors_for_bash();
 
+    // Load configuration to get user-defined colors
+    let config = load_config();
+
     let current_time = Local::now().format("%H:%M:%S").to_string();
     let username = get_username();
     let hostname = get_hostname();
     let current_dir = get_shortened_dir();
 
-    // Create direct ANSI color sequences with bash prompt escaping
-    // This is more reliable than using the colored crate
-    let username_color = bash_color("\x1b[01;32m");  // Bold Green
-    let hostname_color = bash_color("\x1b[01;33m");  // Bold Yellow
-    let dir_color = bash_color("\x1b[01;34m");       // Bold Blue
-    let time_color = bash_color("\x1b[01;36m");      // Bold Cyan
-    let reset = bash_color("\x1b[0m");               // Reset
+    // Map color names to ANSI color codes
+    let color_map = |color_name: &str| -> &str {
+        match color_name {
+            "black" => "\x1b[30m",
+            "red" => "\x1b[31m",
+            "green" => "\x1b[32m",
+            "yellow" => "\x1b[33m",
+            "blue" => "\x1b[34m",
+            "purple" | "magenta" => "\x1b[35m",
+            "cyan" => "\x1b[36m",
+            "white" => "\x1b[37m",
+            "bright_black" | "gray" => "\x1b[90m",
+            "bright_red" => "\x1b[91m",
+            "bright_green" => "\x1b[92m",
+            "bright_yellow" => "\x1b[93m",
+            "bright_blue" => "\x1b[94m",
+            "bright_magenta" | "bright_purple" => "\x1b[95m",
+            "bright_cyan" => "\x1b[96m",
+            "bright_white" => "\x1b[97m",
+            // Bold variants
+            "bold_black" => "\x1b[1;30m",
+            "bold_red" => "\x1b[1;31m",
+            "bold_green" => "\x1b[1;32m",
+            "bold_yellow" => "\x1b[1;33m",
+            "bold_blue" => "\x1b[1;34m",
+            "bold_magenta" | "bold_purple" => "\x1b[1;35m",
+            "bold_cyan" => "\x1b[1;36m",
+            "bold_white" => "\x1b[1;37m",
+            // Default to bold green if not recognized
+            _ => "\x1b[1;32m",
+        }
+    };
+
+    // Create ANSI color sequences with bash prompt escaping based on user configuration
+    let username_color = bash_color(color_map(&config.colors.username));
+    let hostname_color = bash_color(color_map(&config.colors.hostname));
+    let dir_color = bash_color(color_map(&config.colors.directory));
+    let time_color = bash_color(color_map(&config.colors.time));
+    let reset = bash_color("\x1b[0m");
 
     // Format colored text segments
     let username_fmt = format!("{}{}{}", username_color, username, reset);
@@ -475,12 +511,12 @@ fn generate_prompt(style: &str) -> String {
     let time_fmt = format!("{}{}{}", time_color, current_time, reset);
 
     // Only get git info if it's needed for the selected style
-    let git_info = if style != "minimal" {
+    let git_info = if style != "minimal" && config.show_git {
         get_git_info()
             .map(|status| {
-                let branch_color = bash_color("\x1b[01;32m");  // Bold Green
-                let dirty_color = bash_color("\x1b[01;31m");   // Bold Red
-                let ahead_color = bash_color("\x1b[01;33m");   // Bold Yellow
+                let branch_color = bash_color(color_map(&config.colors.git_branch));
+                let dirty_color = bash_color(color_map(&config.colors.git_dirty));
+                let ahead_color = bash_color("\x1b[01;33m");  // Bold Yellow
                 let behind_color = bash_color("\x1b[01;35m");  // Bold Purple
 
                 let branch_info = match style {
