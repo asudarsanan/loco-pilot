@@ -516,8 +516,8 @@ fn generate_prompt(style: &str) -> String {
             .map(|status| {
                 let branch_color = bash_color(color_map(&config.colors.git_branch));
                 let dirty_color = bash_color(color_map(&config.colors.git_dirty));
-                let ahead_color = bash_color("\x1b[01;33m");  // Bold Yellow
-                let behind_color = bash_color("\x1b[01;35m");  // Bold Purple
+                let ahead_color = bash_color("\x1b[01;33m"); // Bold Yellow
+                let behind_color = bash_color("\x1b[01;35m"); // Bold Purple
 
                 let branch_info = match style {
                     "emoji" => format!(" 🔖 {}", status.branch),
@@ -545,7 +545,7 @@ fn generate_prompt(style: &str) -> String {
                 let dirty_info = if status.dirty {
                     match style {
                         "emoji" => " 🔴".to_string(),
-                        _ => format!("{}*{}", dirty_color, reset)
+                        _ => format!("{}*{}", dirty_color, reset),
                     }
                 } else {
                     String::new()
@@ -563,11 +563,7 @@ fn generate_prompt(style: &str) -> String {
         "minimal" => String::from("$ "),
         "info" => format!(
             "[{}] {}@{}: {}{} $ ",
-            time_fmt,
-            username_fmt,
-            hostname_fmt,
-            dir_fmt,
-            git_info
+            time_fmt, username_fmt, hostname_fmt, dir_fmt, git_info
         ),
         "emoji" => format!(
             "🕒 {} 👤 {} 🖥️  {} 📁 {}{} ➡️  ",
@@ -575,10 +571,7 @@ fn generate_prompt(style: &str) -> String {
         ),
         _ => format!(
             "{}@{}:{}{} $ ",
-            username_fmt,
-            hostname_fmt,
-            dir_fmt,
-            git_info
+            username_fmt, hostname_fmt, dir_fmt, git_info
         ),
     }
 }
