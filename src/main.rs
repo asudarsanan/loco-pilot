@@ -10,6 +10,10 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+// Add test_utils module for unit testing
+#[cfg(test)]
+mod test_utils;
+
 /// Type alias for a cached item with timestamp
 type CachedItem<T> = Option<(T, Instant)>;
 
@@ -573,6 +577,58 @@ fn generate_prompt(style: &str) -> String {
             "{}@{}:{}{} $ ",
             username_fmt, hostname_fmt, dir_fmt, git_info
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::tests::create_mock_config;
+    
+    #[test]
+    fn test_config_default() {
+        // Test default configuration values
+        let config = Config::default();
+        assert_eq!(config.style, "default");
+        assert_eq!(config.show_git, true);
+        assert_eq!(config.colors.username, "green");
+        assert_eq!(config.colors.hostname, "yellow");
+        assert_eq!(config.colors.directory, "cyan");
+        assert_eq!(config.colors.git_branch, "green");
+        assert_eq!(config.colors.git_dirty, "red");
+        assert_eq!(config.colors.time, "blue");
+    }
+    
+    #[test]
+    fn test_color_mapping() {
+        // This is a more direct test of the color_map function
+        // since we can't easily test generate_prompt as a whole
+        let green_code = "\x1b[32m";
+        let result = bash_color(green_code);
+        assert_eq!(result, "\\[\x1b[32m\\]");
+    }
+    
+    #[test]
+    fn test_bash_color() {
+        let color_code = "\x1b[32m";  // Green 
+        let bash_escaped = bash_color(color_code);
+        assert_eq!(bash_escaped, "\\[\x1b[32m\\]");
+    }
+    
+    #[test]
+    fn test_mock_config() {
+        // This test uses our mock config function from test_utils
+        let mock_config = create_mock_config();
+        
+        // Verify the mock config has the expected values
+        assert_eq!(mock_config.style, "test_style");
+        assert_eq!(mock_config.show_git, true);
+        assert_eq!(mock_config.colors.username, "test_green");
+        assert_eq!(mock_config.colors.hostname, "test_yellow");
+        assert_eq!(mock_config.colors.directory, "test_cyan");
+        assert_eq!(mock_config.colors.git_branch, "test_green");
+        assert_eq!(mock_config.colors.git_dirty, "test_red");
+        assert_eq!(mock_config.colors.time, "test_blue");
     }
 }
 
