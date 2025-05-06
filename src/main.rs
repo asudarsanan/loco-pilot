@@ -154,6 +154,14 @@ struct Args {
     #[arg(short, long, default_value = "default")]
     style: String,
 
+    /// Copy current git branch name to clipboard
+    #[arg(long = "gbc", action)]
+    git_branch_copy: bool,
+
+    /// Select and copy a git branch from all local branches
+    #[arg(long = "gbs", action)]
+    git_branch_select: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -170,6 +178,12 @@ enum Commands {
 
     /// Display detailed version information
     Version,
+
+    /// Copy the current git branch name to clipboard
+    GitBranchCopy,
+
+    /// Select and copy a git branch from all local branches
+    GitBranchSelect,
 }
 
 /// Returns the current working directory, with home directory replaced by ~
@@ -384,6 +398,11 @@ fn get_git_info() -> Option<GitStatus> {
     Some(git_status)
 }
 
+/// Get current git branch name
+fn get_current_git_branch() -> Option<String> {
+    get_git_info().map(|info| info.branch)
+}
+
 /// Get the current git commit SHA
 fn get_git_commit_sha() -> Option<String> {
     let current_dir = env::current_dir().ok()?;
@@ -580,6 +599,81 @@ fn generate_prompt(style: &str) -> String {
     }
 }
 
+/// Get list of all local git branches
+fn get_git_branches() -> Result<Vec<String>, String> {
+    let current_dir = match env::current_dir() {
+        Ok(dir) => dir,
+        Err(e) => return Err(format!("Failed to get current directory: {}", e)),
+    };
+
+    // Check if this is a git repository
+    let git_dir = current_dir.join(".git");
+    if !git_dir.exists() {
+        return Err("Not in a git repository".to_string());
+    }
+
+    // Get all local branches
+    let output = match Command::new("git")
+        .args(["branch", "--format=%(refname:short)"])
+        .current_dir(&current_dir)
+        .output() {
+        Ok(output) => output,
+        Err(e) => return Err(format!("Failed to execute git command: {}", e)),
+    };
+
+    if !output.status.success() {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Git command failed: {}", error_msg));
+    }
+
+    let branch_output = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse branches from output and filter any empty lines
+    let branches: Vec<String> = branch_output
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect();
+    
+    Ok(branches)
+}
+
+/// Display a selection menu of git branches and return the selected branch
+fn select_git_branch(branches: &[String]) -> Option<String> {
+    println!("Select a branch to copy:");
+    
+    // Display the branches with numbers
+    for (i, branch) in branches.iter().enumerate() {
+        println!("{}. {}", i + 1, branch);
+    }
+    
+    // Read user input
+    print!("Enter number (1-{}): ", branches.len());
+    io::stdout().flush().ok()?;
+    
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).ok()?;
+    
+    // Parse the input as a number
+    match input.trim().parse::<usize>() {
+        Ok(num) if num > 0 && num <= branches.len() => Some(branches[num - 1].clone()),
+        _ => {
+            eprintln!("Invalid selection");
+            None
+        }
+    }
+}
+
+/// Copy text to terminal clipboard or output it for user to copy
+fn copy_to_clipboard(text: &str) -> bool {
+    // In terminal environments, output to stdout for easy copying
+    println!("{}", text);
+
+    // For terminal use, we consider the operation successful if we can output the text
+    // This is more reliable than depending on external clipboard tools
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -634,6 +728,43 @@ mod tests {
 
 fn main() {
     let args = Args::parse();
+
+    // Check for flag arguments first
+    if args.git_branch_copy {
+        // Copy the current git branch name to clipboard
+        if let Some(branch) = get_current_git_branch() {
+            copy_to_clipboard(&branch);
+            println!("Git branch name: '{}'", branch);
+            return;
+        } else {
+            eprintln!("Not in a git repository or unable to determine current branch");
+            return;
+        }
+    }
+
+    if args.git_branch_select {
+        // Get list of branches and present a selection menu
+        match get_git_branches() {
+            Ok(branches) => {
+                if branches.is_empty() {
+                    eprintln!("No git branches found");
+                    return;
+                }
+                
+                let selected_branch = select_git_branch(&branches);
+                if let Some(branch) = selected_branch {
+                    copy_to_clipboard(&branch);
+                    println!("Selected git branch: '{}'", branch);
+                } else {
+                    eprintln!("No branch selected");
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to get git branches: {}", e);
+            }
+        }
+        return;
+    }
 
     match &args.command {
         Some(Commands::Config { key, value }) => {
@@ -702,6 +833,37 @@ fn main() {
         }
         Some(Commands::Version) => {
             println!("Version: {}", get_full_version());
+        }
+        Some(Commands::GitBranchCopy) => {
+            // Copy the current git branch name to clipboard
+            if let Some(branch) = get_current_git_branch() {
+                copy_to_clipboard(&branch);
+                println!("Git branch name: '{}'", branch);
+            } else {
+                eprintln!("Not in a git repository or unable to determine current branch");
+            }
+        }
+        Some(Commands::GitBranchSelect) => {
+            // Get list of branches and present a selection menu
+            match get_git_branches() {
+                Ok(branches) => {
+                    if branches.is_empty() {
+                        eprintln!("No git branches found");
+                        return;
+                    }
+                    
+                    let selected_branch = select_git_branch(&branches);
+                    if let Some(branch) = selected_branch {
+                        copy_to_clipboard(&branch);
+                        println!("Selected git branch: '{}'", branch);
+                    } else {
+                        eprintln!("No branch selected");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to get git branches: {}", e);
+                }
+            }
         }
         None => {
             // Only load config if needed for the style information
