@@ -2,7 +2,7 @@
 #[cfg(test)]
 pub mod tests {
     use super::super::*;
-    
+
     /// Creates a mock Config for testing
     pub fn create_mock_config() -> Config {
         Config {

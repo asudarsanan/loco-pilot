@@ -584,7 +584,7 @@ fn generate_prompt(style: &str) -> String {
 mod tests {
     use super::*;
     use crate::test_utils::tests::create_mock_config;
-    
+
     #[test]
     fn test_config_default() {
         // Test default configuration values
@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(config.colors.git_dirty, "red");
         assert_eq!(config.colors.time, "blue");
     }
-    
+
     #[test]
     fn test_color_mapping() {
         // This is a more direct test of the color_map function
@@ -607,19 +607,19 @@ mod tests {
         let result = bash_color(green_code);
         assert_eq!(result, "\\[\x1b[32m\\]");
     }
-    
+
     #[test]
     fn test_bash_color() {
-        let color_code = "\x1b[32m";  // Green 
+        let color_code = "\x1b[32m"; // Green 
         let bash_escaped = bash_color(color_code);
         assert_eq!(bash_escaped, "\\[\x1b[32m\\]");
     }
-    
+
     #[test]
     fn test_mock_config() {
         // This test uses our mock config function from test_utils
         let mock_config = create_mock_config();
-        
+
         // Verify the mock config has the expected values
         assert_eq!(mock_config.style, "test_style");
         assert_eq!(mock_config.show_git, true);
