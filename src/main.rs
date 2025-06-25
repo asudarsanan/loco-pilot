@@ -731,38 +731,12 @@ fn main() {
 
     // Check for flag arguments first
     if args.git_branch_copy {
-        // Copy the current git branch name to clipboard
-        if let Some(branch) = get_current_git_branch() {
-            copy_to_clipboard(&branch);
-            println!("Git branch name: '{}'", branch);
-            return;
-        } else {
-            eprintln!("Not in a git repository or unable to determine current branch");
-            return;
-        }
+        handle_git_branch_selection(true);
+        return;
     }
 
     if args.git_branch_select {
-        // Get list of branches and present a selection menu
-        match get_git_branches() {
-            Ok(branches) => {
-                if branches.is_empty() {
-                    eprintln!("No git branches found");
-                    return;
-                }
-                
-                let selected_branch = select_git_branch(&branches);
-                if let Some(branch) = selected_branch {
-                    copy_to_clipboard(&branch);
-                    println!("Selected git branch: '{}'", branch);
-                } else {
-                    eprintln!("No branch selected");
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to get git branches: {}", e);
-            }
-        }
+        handle_git_branch_selection(false);
         return;
     }
 
